@@ -20,10 +20,10 @@ if [ -f football/logs/log_alerts_pid.txt ]; then
     # Clean up the PID file
     rm football/logs/log_alerts_pid.txt
 else
-    echo "PID file not found. Looking for any log_alerts.py processes..."
+    echo "PID file not found. Looking for any log_alerts processes..."
     
     # Try to find the process by name
-    FETCHER_PIDS=$(pgrep -f "python3.*log_alerts.py")
+    FETCHER_PIDS=$(pgrep -f "python3.*run_log_alerts.py")
     
     if [ -n "$FETCHER_PIDS" ]; then
         echo "Found log alerts processes with PIDs: $FETCHER_PIDS"

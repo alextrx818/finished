@@ -13,7 +13,7 @@ cd "/root/CascadeProjects/sports bot"
 mkdir -p football/logs
 
 # Run the log alerts scanner in the background
-nohup python3 football/log_alerts.py --continuous --interval 60 > football/logs/log_alerts_process.log 2>&1 &
+nohup python3 football/run_log_alerts.py --continuous --interval 60 > football/logs/log_alerts_process.log 2>&1 &
 LOGGER_PID=$!
 
 echo "Log Alerts Scanner started with PID: $LOGGER_PID"
