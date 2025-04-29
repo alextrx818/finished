@@ -87,6 +87,38 @@ The script supports 24/7 continuous monitoring with automatic refreshing. When r
 
 This mode is ideal for keeping track of live matches over extended periods. The script displays timestamps with each update, making it easy to track when data was last refreshed.
 
+## Alerts System
+
+The project includes a comprehensive alerts system that monitors live matches and sends notifications via Telegram when specific criteria are met. Full documentation is available in:
+
+- [ALERTS_README.md](./ALERTS_README.md) - General alerts documentation
+- [MATCH_START_ALERTS_README.md](./MATCH_START_ALERTS_README.md) - Match start alerts documentation
+- [STARTUP_README.md](./STARTUP_README.md) - How to run the system 24/7
+
+### Available Alert Types
+
+| Alert Type | Description | File |
+|------------|-------------|------|
+| 3HT0 | Alerts when matches with Over/Under line ≥3.0 reach halftime with 0-0 score | alerts/ThreeHtZero.py |
+| 3 O/U Started | Alerts when a match starts with Over/Under line ≥3.0 | alerts/match_start/three_ou.py |
+
+### Running the Alerts System
+
+```bash
+# Start both live monitoring and alerts system
+bash football/restart_all.sh
+
+# View live match output in terminal
+bash football/show_matches.sh
+
+# View alerts logs
+tail -f football/alerts.log
+```
+
+### Adding Custom Alerts
+
+The alerts system is modular and extensible. Create new alert types by adding Python files to the appropriate directory in the `alerts/` folder and extend the `AlertCriteria` class. See the MATCH_START_ALERTS_README.md for detailed instructions.
+
 ## Performance Optimizations
 - Uses concurrent.futures.ThreadPoolExecutor for parallel API requests
 - Implements LRU caching with functools.lru_cache to minimize duplicate API calls
