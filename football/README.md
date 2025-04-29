@@ -119,6 +119,50 @@ tail -f football/alerts.log
 
 The alerts system is modular and extensible. Create new alert types by adding Python files to the appropriate directory in the `alerts/` folder and extend the `AlertCriteria` class. See the MATCH_START_ALERTS_README.md for detailed instructions.
 
+## Daily Match Logging System
+
+The project includes a daily logging system that records every fetch made by live.py throughout the day, allowing for end-of-day review and analysis.
+
+### Starting the Daily Logger
+
+```bash
+# Start the daily logger in the background (logs every 30 seconds)
+bash football/start_daily_logging.sh
+```
+
+### Viewing Daily Logs
+
+```bash
+# View today's log summary
+python3 football/view_daily_logs.py
+
+# View a specific date's logs
+python3 football/view_daily_logs.py --date 2025-04-28
+
+# View detailed fetch information
+python3 football/view_daily_logs.py --detailed
+
+# List all available log files
+python3 football/view_daily_logs.py --list
+```
+
+### Stopping the Daily Logger
+
+```bash
+# Stop the daily logger
+bash football/stop_daily_logging.sh
+```
+
+### Log Features
+
+- Creates a new log file each day (format: `football_fetches_YYYY-MM-DD.log`)
+- Records timestamp for each fetch
+- Captures match details, odds lines, and status information
+- Provides end-of-day summary statistics
+- Analyzes matches by competition, status, and O/U line
+- Tracks unique matches seen throughout the day
+- All logs are stored in the `football/logs/` directory
+
 ## Performance Optimizations
 - Uses concurrent.futures.ThreadPoolExecutor for parallel API requests
 - Implements LRU caching with functools.lru_cache to minimize duplicate API calls
