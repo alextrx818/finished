@@ -352,16 +352,6 @@ def format_match_odds(odds_data):
     # Handle the case where results is a dictionary rather than a list
     results = odds_data["results"]
     
-    # Print raw data for SPREAD and ML for debugging
-    print("\nDEBUG: Raw odds data used for calculation:")
-    for bookmaker_id, bookmaker_data in results.items():
-        if "asia" in bookmaker_data and bookmaker_data["asia"]:
-            print(f"SPREAD (Asia) - Bookmaker {bookmaker_id} sample: {bookmaker_data['asia'][0]}")
-        if "eu" in bookmaker_data and bookmaker_data["eu"]:
-            print(f"ML (EU) - Bookmaker {bookmaker_id} sample: {bookmaker_data['eu'][0]}")
-        if "bs" in bookmaker_data and bookmaker_data["bs"]:
-            print(f"Over/Under (BS) - Bookmaker {bookmaker_id} sample: {bookmaker_data['bs'][0]}")
-    
     # The structure is {"results": {"bookmaker_id": {"odds_type": [odds_entries]}}}
     for bookmaker_id, bookmaker_data in results.items():
         # Process Asia handicap (SPREAD)
@@ -414,6 +404,10 @@ def format_match_odds(odds_data):
                     draw_decimal = float(euro_entry[3])      # Draw odds (decimal)
                     away_win_decimal = float(euro_entry[4])  # Away win odds (decimal)
                     
+                    # Skip conversion if any odds value is exactly 1.0
+                    if home_win_decimal == 1.0 or draw_decimal == 1.0 or away_win_decimal == 1.0:
+                        continue
+                    
                     # Directly apply the conversion formula
                     if home_win_decimal >= 2.0:
                         home_win = int(round((home_win_decimal - 1) * 100))
@@ -430,12 +424,6 @@ def format_match_odds(odds_data):
                     else:
                         away_win = int(round(-100 / (away_win_decimal - 1)))
                     
-                    # Add detailed debugging for this conversion
-                    print(f"DEBUG EU CONVERSION: Entry time {time_of_match}")
-                    print(f"  Home: {home_win_decimal} → {home_win}")
-                    print(f"  Draw: {draw_decimal} → {draw}")
-                    print(f"  Away: {away_win_decimal} → {away_win}")
-                    
                     ml_entry = {
                         "time_of_match": time_of_match,
                         "home_win": home_win,
@@ -443,17 +431,23 @@ def format_match_odds(odds_data):
                         "away_win": away_win
                     }
                     
-                    # Specifically look for minutes 4, 5, or 6 for all odds as requested
-                    if time_of_match in ["4", "5", "6"]:
-                        target_minutes_entries.append(ml_entry)
-                    else:
+                    # Check if time_of_match is numeric
+                    try:
+                        minute = int(time_of_match) if time_of_match.isdigit() else 0
+                        # Only include minutes 4-6 as requested
+                        if minute >= 4 and minute <= 6:
+                            target_minutes_entries.append(ml_entry)
+                        else:
+                            other_entries.append(ml_entry)
+                    except (ValueError, TypeError):
+                        # Not a numeric minute, add to other entries
                         other_entries.append(ml_entry)
-            
+                        
             # Add target minutes entries if they exist (prioritized)
             if target_minutes_entries:
                 formatted_odds["ML"].extend(target_minutes_entries)
             # Otherwise add the other entries
-            else:
+            elif other_entries:
                 formatted_odds["ML"].extend(other_entries)
         
         # Process Big Small (Over/Under)
@@ -563,112 +557,234 @@ def format_odds_display(formatted_odds):
     """
     Format the odds for display
     """
-    output = []
+    if not formatted_odds:
+        return "No odds data available"
     
-    # Display ML (European odds) FIRST
-    if formatted_odds.get("ML"):
-        # Sort by time and take the most relevant minute (4-6)
-        ml_sorted = sorted(formatted_odds["ML"], key=lambda x: str(x.get("time_of_match", "")))
+    output_lines = []
+    
+    # Format ML (Money Line) - European odds
+    if "ML" in formatted_odds and formatted_odds["ML"]:
+        ml_entries = formatted_odds["ML"]
+        
+        # Sort by time to find the closest entries to minutes 4-6
+        # Convert time_of_match to int where possible for better sorting
+        def get_time_value(entry):
+            time_str = entry.get("time_of_match", "")
+            try:
+                if time_str.isdigit():
+                    return int(time_str)
+                return 1000  # Large number for non-numeric times
+            except (ValueError, AttributeError):
+                return 1000
+                
+        # Sort the entries by time
+        ml_entries.sort(key=get_time_value)
         
         # Try to find an entry from minutes 4-6
+        target_minutes = ["4", "5", "6"]
         ml_entry = None
-        for entry in ml_sorted:
-            time_str = entry.get("time_of_match", "")
-            if time_str in ["4", "5", "6"]:
+        
+        # First pass: check for exact match in minutes 4-6
+        for entry in ml_entries:
+            time_of_match = entry.get("time_of_match", "")
+            if time_of_match in target_minutes:
                 ml_entry = entry
                 break
         
-        # If no entry from minutes 4-6, take the first available
-        if not ml_entry and ml_sorted:
-            ml_entry = ml_sorted[0]
+        # If no entry from minutes 4-6, find the closest minute
+        if not ml_entry and ml_entries:
+            # Create entries with numeric times and non-numeric times
+            numeric_entries = []
+            non_numeric_entries = []
+            
+            for entry in ml_entries:
+                time_str = entry.get("time_of_match", "")
+                if time_str.isdigit():
+                    numeric_entries.append((int(time_str), entry))
+                else:
+                    non_numeric_entries.append(entry)
+            
+            # Find the closest numeric time to the target range (4-6)
+            if numeric_entries:
+                # Sort by distance to the target range (middle is 5)
+                numeric_entries.sort(key=lambda x: min(abs(x[0] - 4), abs(x[0] - 5), abs(x[0] - 6)))
+                ml_entry = numeric_entries[0][1]
+            else:
+                # If no numeric entries, use the first non-numeric entry
+                ml_entry = non_numeric_entries[0] if non_numeric_entries else None
         
         if ml_entry:
-            ml_time = ml_entry.get("time_of_match", "")
-            
-            # Get the raw values for debugging
-            home_win_raw = ml_entry.get("home_win", 0)
-            draw_raw = ml_entry.get("draw", 0)
-            away_win_raw = ml_entry.get("away_win", 0)
-            
-            # Format for display
-            home_win = format_american_odds(home_win_raw)
-            draw = format_american_odds(draw_raw)
-            away_win = format_american_odds(away_win_raw)
-            
-            # Add debug info with better formatting
-            print(f"DEBUG ML: Home: {home_win_raw} | Draw: {draw_raw} | Away: {away_win_raw}")
+            ml_time = ml_entry.get("time_of_match", "Unknown")
+            ml_home_win = ml_entry.get("home_win", 0)
+            ml_draw = ml_entry.get("draw", 0)
+            ml_away_win = ml_entry.get("away_win", 0)
             
             # Add a note if this is not from the target minutes 4-6
             minutes_note = ""
-            if ml_time not in ["4", "5", "6"]:
-                minutes_note = " (No data from minutes 4-6 available)"
+            if ml_time not in target_minutes:
+                minutes_note = f" (Closest time to minutes 4-6 available: {ml_time})"
             
-            output.append("ML (Money Line):")
-            output.append(f"Time: {ml_time} min{minutes_note} | Home: {home_win} | Draw: {draw} | Away: {away_win}")
+            output_lines.append("ML (Money Line):")
+            output_lines.append(f"Time: {ml_time} min | Home: {format_american_odds(ml_home_win)} | Draw: {format_american_odds(ml_draw)} | Away: {format_american_odds(ml_away_win)}{minutes_note}")
     
     # Display SPREAD (Asia handicap)
-    if formatted_odds.get("SPREAD"):
-        # Sort by time and take the earliest from minutes 4-6 if available
-        spread_sorted = sorted(formatted_odds["SPREAD"], key=lambda x: str(x.get("time_of_match", "")))
+    if "SPREAD" in formatted_odds and formatted_odds["SPREAD"]:
+        spread_entries = formatted_odds["SPREAD"]
+        
+        # Sort entries by time for finding closest match
+        def get_time_value(entry):
+            time_str = entry.get("time_of_match", "")
+            try:
+                if time_str.isdigit():
+                    return int(time_str)
+                return 1000  # Large number for non-numeric times
+            except (ValueError, AttributeError):
+                return 1000
+                
+        # Sort the entries by time
+        spread_entries.sort(key=get_time_value)
         
         # Try to find an entry from minutes 4-6
+        target_minutes = ["4", "5", "6"]
         spread_entry = None
-        for entry in spread_sorted:
-            time_str = entry.get("time_of_match", "")
-            if time_str in ["4", "5", "6"]:
+        
+        # First pass: check for exact match in minutes 4-6
+        for entry in spread_entries:
+            time_of_match = entry.get("time_of_match", "")
+            if time_of_match in target_minutes:
                 spread_entry = entry
                 break
         
-        # If no entry from minutes 4-6, take the first available
-        if not spread_entry and spread_sorted:
-            spread_entry = spread_sorted[0]
+        # If no entry from minutes 4-6, find the closest minute
+        if not spread_entry and spread_entries:
+            # Create entries with numeric times and non-numeric times
+            numeric_entries = []
+            non_numeric_entries = []
             
+            for entry in spread_entries:
+                time_str = entry.get("time_of_match", "")
+                if time_str.isdigit():
+                    numeric_entries.append((int(time_str), entry))
+                else:
+                    non_numeric_entries.append(entry)
+            
+            # Find the closest numeric time to the target range (4-6)
+            if numeric_entries:
+                # Sort by distance to the target range (middle is 5)
+                numeric_entries.sort(key=lambda x: min(abs(x[0] - 4), abs(x[0] - 5), abs(x[0] - 6)))
+                spread_entry = numeric_entries[0][1]
+            else:
+                # If no numeric entries, use the first non-numeric entry
+                spread_entry = non_numeric_entries[0] if non_numeric_entries else None
+                
         if spread_entry:
-            spread_time = spread_entry.get("time_of_match", "")
+            spread_time = spread_entry.get("time_of_match", "Unknown")
             home_odds = format_american_odds(spread_entry.get("home_win", 0))
             handicap = spread_entry.get("handicap", 0)
             away_odds = format_american_odds(spread_entry.get("away_win", 0))
             
             # Add a note if this is not from the target minutes 4-6
             minutes_note = ""
-            if spread_time not in ["4", "5", "6"]:
-                minutes_note = " (No data from minutes 4-6 available)"
-            
-            output.append("\nSPREAD (Asia Handicap):")
-            output.append(f"Time: {spread_time} min{minutes_note} | Home: {home_odds} | Handicap: {handicap} | Away: {away_odds}")
+            if spread_time not in target_minutes:
+                minutes_note = f" (Closest time to minutes 4-6 available: {spread_time})"
+                
+            output_lines.append("\nSPREAD (Asia Handicap):")
+            output_lines.append(f"Time: {spread_time} min | Home: {home_odds} | Handicap: {handicap} | Away: {away_odds}{minutes_note}")
     
     # Display Over/Under
-    if formatted_odds.get("Over/Under"):
-        # Sort by time and try to find entries from minutes 4-6
-        ou_sorted = sorted(formatted_odds["Over/Under"], key=lambda x: str(x.get("time_of_match", "")))
+    if "Over/Under" in formatted_odds and formatted_odds["Over/Under"]:
+        ou_entries = formatted_odds["Over/Under"]
+        
+        # Sort entries by time for finding closest match
+        def get_time_value(entry):
+            time_str = entry.get("time_of_match", "")
+            try:
+                if time_str.isdigit():
+                    return int(time_str)
+                return 1000  # Large number for non-numeric times
+            except (ValueError, AttributeError):
+                return 1000
+                
+        # Sort the entries by time
+        ou_entries.sort(key=get_time_value)
         
         # Try to find an entry from minutes 4-6
+        target_minutes = ["4", "5", "6"]
         ou_entry = None
-        for entry in ou_sorted:
-            time_str = entry.get("time_of_match", "")
-            if time_str in ["4", "5", "6"]:
+        
+        # First pass: check for exact match in minutes 4-6
+        for entry in ou_entries:
+            time_of_match = entry.get("time_of_match", "")
+            if time_of_match in target_minutes:
                 ou_entry = entry
                 break
         
-        # If no entry from minutes 4-6, take the first available
-        if not ou_entry and ou_sorted:
-            ou_entry = ou_sorted[0]
+        # If no entry from minutes 4-6, find the closest minute
+        if not ou_entry and ou_entries:
+            # Create entries with numeric times and non-numeric times
+            numeric_entries = []
+            non_numeric_entries = []
+            
+            for entry in ou_entries:
+                time_str = entry.get("time_of_match", "")
+                if time_str.isdigit():
+                    numeric_entries.append((int(time_str), entry))
+                else:
+                    non_numeric_entries.append(entry)
+            
+            # Find the closest numeric time to the target range (4-6)
+            if numeric_entries:
+                # Sort by distance to the target range (middle is 5)
+                numeric_entries.sort(key=lambda x: min(abs(x[0] - 4), abs(x[0] - 5), abs(x[0] - 6)))
+                ou_entry = numeric_entries[0][1]
+            else:
+                # If no numeric entries, use the first non-numeric entry
+                ou_entry = non_numeric_entries[0] if non_numeric_entries else None
         
         if ou_entry:
-            ou_time = ou_entry.get("time_of_match", "")
+            ou_time = ou_entry.get("time_of_match", "Unknown")
             over_odds = format_american_odds(ou_entry.get("over", 0))
             handicap = ou_entry.get("handicap", 0)
             under_odds = format_american_odds(ou_entry.get("under", 0))
             
             # Add a note if this is not from the target minutes 4-6
             minutes_note = ""
-            if ou_time not in ["4", "5", "6"]:
-                minutes_note = " (No data from minutes 4-6 available)"
-            
-            output.append("\nOver/Under:")
-            output.append(f"Time: {ou_time} min{minutes_note} | Over: {over_odds} | Line: {handicap} | Under: {under_odds}")
+            if ou_time not in target_minutes:
+                minutes_note = f" (Closest time to minutes 4-6 available: {ou_time})"
+                
+            output_lines.append("\nOver/Under:")
+            output_lines.append(f"Time: {ou_time} min | Over: {over_odds} | Line: {handicap} | Under: {under_odds}{minutes_note}")
     
-    return "\n".join(output)
+    return "\n".join(output_lines)
+
+def get_status_description(status_id):
+    """
+    Convert numeric status_id to a human-readable description
+    """
+    status_mapping = {
+        "1": "Not started",
+        "2": "First half",
+        "3": "Half-time break",
+        "4": "Second half",
+        "5": "Extra time",
+        "6": "Penalty shootout",
+        "7": "Finished",
+        "8": "Finished",
+        "9": "Postponed",
+        "10": "Canceled",
+        "11": "To be announced",
+        "12": "Interrupted",
+        "13": "Abandoned",
+        "14": "Suspended",
+    }
+    
+    # Handle both string and integer status codes
+    if isinstance(status_id, int):
+        code = str(status_id)
+    else:
+        code = str(status_id)
+    
+    return status_mapping.get(code, f"Unknown (ID: {code})")
 
 def main():
     """
@@ -676,233 +792,159 @@ def main():
     """
     try:
         # Load countries first so we have them available for competition lookup
-        print("Fetching country data...")
-        countries = fetch_country_data()
-        country_map = create_country_id_to_name_map(countries)
+        country_data = fetch_country_data()
+        country_map = create_country_id_to_name_map(country_data)
         
         # Fetch live matches
-        print("Fetching live matches...")
         live_matches_data = fetch_live_matches()
         if not live_matches_data or "results" not in live_matches_data:
             print("No live matches found.")
             return
         
-        matches = live_matches_data["results"]
-        print(f"\nFound {len(matches)} live matches.")
+        # Extract match IDs
+        match_ids = extract_match_ids(live_matches_data)
         
-        # Optionally limit the number of matches for quicker results
-        limit = int(sys.argv[1]) if len(sys.argv) > 1 else 5  # Default to 5
-        if limit < len(matches):
-            print(f"Limiting to first {limit} matches for quicker results.")
-            matches = matches[:limit]
+        # Print a header with total matches found
+        print(f"\n===== FOUND {len(match_ids)} LIVE FOOTBALL MATCHES =====\n")
         
-        # Prepare for parallel processing
-        match_ids = [match.get("id") for match in matches]
-        
-        print("Fetching match details in parallel...\n")
-        
-        # Process matches in parallel
-        with ThreadPoolExecutor(max_workers=min(10, len(match_ids))) as executor:
-            # Submit match detail fetching tasks
-            detail_futures = {executor.submit(fetch_match_details, match_id): match_id for match_id in match_ids}
-            
-            # Process results as they complete
-            for i, future in enumerate(as_completed(detail_futures), 1):
-                match_id = detail_futures[future]
-                try:
-                    match_details = future.result()
-                    if not match_details or "results" not in match_details:
-                        print(f"No details found for match ID: {match_id}")
-                        continue
-                    
-                    # Header for each match
-                    print("=" * 30)
-                    print(f"MATCH {i} of {len(match_ids)}")
-                    print("=" * 30)
-                    print(f"Processing match ID: {match_id}")
-                    
-                    match_data = match_details["results"][0] if match_details["results"] else None
-                    if not match_data:
-                        print(f"No data in results for match ID: {match_id}")
-                        continue
-                    
-                    # Fetch team and competition info
-                    print("Fetching team and competition data...")
-                    home_team_id = match_data.get("home_team_id", "")
-                    away_team_id = match_data.get("away_team_id", "")
-                    competition_id = match_data.get("competition_id", "")
-                    
-                    home_team_info = fetch_team_info(home_team_id) if home_team_id else None
-                    away_team_info = fetch_team_info(away_team_id) if away_team_id else None
-                    competition_info = fetch_competition_info(competition_id) if competition_id else None
-                    
-                    home_team_name = extract_team_name(home_team_info) if home_team_info else "Unknown Home Team"
-                    away_team_name = extract_team_name(away_team_info) if away_team_info else "Unknown Away Team"
-                    
-                    competition_name = extract_competition_info(competition_info)[0] if competition_info else "Unknown Competition"
-                    competition_country_id = extract_competition_info(competition_info)[1] if competition_info else None
-                    competition_country = country_map.get(competition_country_id, "Unknown Country")
-                    
-                    # Fetch odds data
-                    print(f"Fetching odds data for match ID: {match_id}...")
-                    odds_data = fetch_match_odds(match_id)
-                    
-                    # Print some debug info about the odds data
-                    print("\nRaw odds data sample:")
-                    if odds_data and "results" in odds_data:
-                        results = odds_data["results"]
-                        print(f"Results type: {type(results)}")
-                        
-                        # Debug for EU odds
-                        for bookmaker_id, bookmaker_data in results.items():
-                            if "eu" in bookmaker_data:
-                                print("\nDetailed EU (Money Line) odds for bookmaker", bookmaker_id)
-                                early_eu_entries = []
-                                
-                                # Filter to get entries from minutes 4-6
-                                for entry in bookmaker_data["eu"]:
-                                    if len(entry) >= 5 and entry[1] in ["4", "5", "6"]:
-                                        early_eu_entries.append(entry)
-                                
-                                if early_eu_entries:
-                                    print(f"Found {len(early_eu_entries)} EU entries from minutes 4-6:")
-                                    for entry in early_eu_entries[:3]:  # Show first 3 entries
-                                        print(f"Raw entry: {entry}")
-                                        print(f"Parsed as: Time: {entry[1]}, Home: {entry[2]}, Draw: {entry[3]}, Away: {entry[4]}")
-                                        print(f"Converted to American (Decimal odds): Time: {entry[1]}, "
-                                              f"Home: {decimal_to_american_str(entry[2])}, Draw: {decimal_to_american_str(entry[3])}, "
-                                              f"Away: {decimal_to_american_str(entry[4])}")
-                                        print("-" * 40)
-                                else:
-                                    print("No early game EU entries found (minutes 4-6)")
-                                    
-                                    # Show any other entries
-                                    other_entries = []
-                                    for entry in bookmaker_data["eu"]:
-                                        if len(entry) >= 5:
-                                            other_entries.append(entry)
-                                    
-                                    if other_entries:
-                                        print(f"Found {len(other_entries)} other EU entries:")
-                                        for entry in other_entries[:1]:  # Show just the first one
-                                            print(f"Raw entry: {entry}")
-                                            print(f"Parsed as: Time: {entry[1]}, Home: {entry[2]}, Draw: {entry[3]}, Away: {entry[4]}")
-                                            print(f"Converted to American (Decimal odds): Time: {entry[1]}, "
-                                                  f"Home: {decimal_to_american_str(entry[2])}, Draw: {decimal_to_american_str(entry[3])}, "
-                                                  f"Away: {decimal_to_american_str(entry[4])}")
-                                            print("-" * 40)
-                                break
-                        
-                        # Debug for BS odds
-                        for bookmaker_id, bookmaker_data in results.items():
-                            if "bs" in bookmaker_data:
-                                print("\nDetailed BS (Over/Under) data for bookmaker", bookmaker_id)
-                                early_bs_entries = []
-                                
-                                # Filter to get entries from minutes 1-3
-                                for entry in bookmaker_data["bs"]:
-                                    if len(entry) >= 5 and entry[1] in ["1", "2", "3"]:
-                                        early_bs_entries.append(entry)
-                                
-                                if early_bs_entries:
-                                    print(f"Found {len(early_bs_entries)} entries from minutes 1-3:")
-                                    for entry in early_bs_entries[:3]:  # Show first 3 entries
-                                        print(f"Raw entry: {entry}")
-                                        print(f"Parsed as: Time: {entry[1]}, Over: {entry[2]}, Line: {entry[3]}, Under: {entry[4]}")
-                                        print(f"Converted to American (Hong Kong odds): Time: {entry[1]}, "
-                                              f"Over: {hk_to_american_str(entry[2])}, Line: {entry[3]}, Under: {hk_to_american_str(entry[4])}")
-                                        print("-" * 40)
-                                else:
-                                    print("No early game BS entries found (minutes 1-3)")
-                                    
-                                    # Show pre-match entries instead
-                                    pre_match = [entry for entry in bookmaker_data["bs"] 
-                                                if len(entry) >= 5 and (not entry[1] or entry[1] == "")]
-                                    if pre_match:
-                                        print(f"Found {len(pre_match)} pre-match entries:")
-                                        for entry in pre_match[:1]:  # Show just the first one
-                                            print(f"Raw entry: {entry}")
-                                            print(f"Parsed as: Time: pre-match, Over: {entry[2]}, Line: {entry[3]}, Under: {entry[4]}")
-                                            print(f"Converted to American (Hong Kong odds): Time: pre-match, "
-                                                  f"Over: {hk_to_american_str(entry[2])}, Line: {entry[3]}, Under: {hk_to_american_str(entry[4])}")
-                                            print("-" * 40)
-                                break
-                    
-                    # Format the match odds
-                    formatted_odds = format_match_odds(odds_data)
-                    
-                    # Get environment data
-                    environment = match_data.get("environment", {})
-                    weather = environment.get("weather", "")
-                    temperature = environment.get("temperature", "")
-                    wind = environment.get("wind", "")
-                    humidity = environment.get("humidity", "")
-                    
-                    # Convert temperature from Celsius to Fahrenheit if available
-                    temperature_fahrenheit = ""
-                    if temperature:
-                        try:
-                            temp_c = float(temperature)
-                            temp_f = (temp_c * 9/5) + 32
-                            temperature_fahrenheit = f"{temp_f:.1f}°F"
-                        except (ValueError, TypeError):
-                            temperature_fahrenheit = ""
-                    
-                    # Process weather code to text description
-                    weather_text = get_weather_description(weather) if weather else ""
-                    
-                    # Convert wind speed from m/s to mph if available
-                    wind_mph = ""
-                    if wind:
-                        try:
-                            wind_mps = float(wind)
-                            wind_mph = f"{wind_mps * 2.237:.1f} mph"
-                        except (ValueError, TypeError):
-                            wind_mph = wind
-                    
-                    # Format humidity with single %
-                    humidity_text = ""
-                    if humidity:
-                        # Remove any existing % sign and add a single one
-                        humidity_clean = str(humidity).replace("%", "").strip()
-                        humidity_text = f"{humidity_clean}%"
-                    
-                    # Print match summary
-                    print("\n----- MATCH SUMMARY -----")
-                    print(f"Competition ID: {competition_id}")
-                    print(f"Competition: {competition_name} ({competition_country})")
-                    print(f"Match: {home_team_name} vs {away_team_name}")
-                    print(f"Score: {match_data.get('home_score', 0)} - {match_data.get('away_score', 0)} (HT: {match_data.get('home_score_half', 0)} - {match_data.get('away_score_half', 0)})")
-                    print(f"Status: {match_data.get('status_name', 'Unknown')}")
-                    
-                    # Print odds information first
-                    if formatted_odds:
-                        print("\n--- MATCH BETTING ODDS ---")
-                        print(format_odds_display(formatted_odds))
-                    
-                    # Print environment info after the odds
-                    if weather_text or temperature_fahrenheit or wind_mph or humidity_text:
-                        print("\n--- MATCH ENVIRONMENT ---")
-                        if weather_text:
-                            print(f"Weather: {weather_text}")
-                        if temperature_fahrenheit:
-                            print(f"Temperature: {temperature_fahrenheit}")
-                        if wind_mph:
-                            print(f"Wind: {wind_mph}")
-                        if humidity_text:
-                            print(f"Humidity: {humidity_text}")
+        # Process each match ID
+        for i, match_id in enumerate(match_ids, 1):
+            try:
+                # Get match data from the live endpoint
+                live_match_data = None
+                for match in live_matches_data["results"]:
+                    if match["id"] == match_id:
+                        live_match_data = match
+                        break
+                
+                if not live_match_data:
+                    continue
+                
+                # Fetch additional match details from the recent/list endpoint
+                match_details_data = fetch_match_details(match_id)
+                
+                # Get match details from the response
+                match_details = None
+                if match_details_data and "results" in match_details_data and match_details_data["results"]:
+                    # Match details from recent/list endpoint may be in various formats
+                    if isinstance(match_details_data["results"], list):
+                        match_details = match_details_data["results"][0]
                     else:
-                        print("\n--- MATCH ENVIRONMENT ---")
-                        print("No environment data available for this match")
+                        match_details = match_details_data["results"]
+                
+                # Combine data from both endpoints
+                match_data = live_match_data.copy()  # Start with live data
+                
+                # Add or override with details data if available
+                if match_details:
+                    match_data.update({k: v for k, v in match_details.items() if k not in match_data or not match_data[k]})
+                
+                # Fetch team and competition info
+                home_team_id = match_data.get("home_team_id", "")
+                away_team_id = match_data.get("away_team_id", "")
+                competition_id = match_data.get("competition_id", "")
+                
+                home_team_info = fetch_team_info(home_team_id) if home_team_id else None
+                away_team_info = fetch_team_info(away_team_id) if away_team_id else None
+                competition_info = fetch_competition_info(competition_id) if competition_id else None
+                
+                home_team_name = extract_team_name(home_team_info) if home_team_info else "Unknown Home Team"
+                away_team_name = extract_team_name(away_team_info) if away_team_info else "Unknown Away Team"
+                
+                competition_name = extract_competition_info(competition_info)[0] if competition_info else "Unknown Competition"
+                competition_country_id = extract_competition_info(competition_info)[1] if competition_info else None
+                competition_country = country_map.get(competition_country_id, "Unknown Country")
+                
+                # Fetch odds data
+                odds_data = fetch_match_odds(match_id)
+                
+                # Format the match odds
+                formatted_odds = format_match_odds(odds_data)
+                
+                # Get environment data
+                environment = match_data.get("environment", {})
+                weather = environment.get("weather", "")
+                temperature = environment.get("temperature", "")
+                wind = environment.get("wind", "")
+                humidity = environment.get("humidity", "")
+                
+                # Convert temperature from Celsius to Fahrenheit if available
+                temperature_fahrenheit = ""
+                if temperature:
+                    try:
+                        temp_c = float(temperature)
+                        temp_f = (temp_c * 9/5) + 32
+                        temperature_fahrenheit = f"{temp_f:.1f}°F"
+                    except (ValueError, TypeError):
+                        temperature_fahrenheit = ""
+                
+                # Process weather code to text description
+                weather_text = get_weather_description(weather) if weather else ""
+                
+                # Convert wind speed from m/s to mph if available
+                wind_mph = ""
+                if wind:
+                    try:
+                        wind_mps = float(wind)
+                        wind_mph = f"{wind_mps * 2.237:.1f} mph"
+                    except (ValueError, TypeError):
+                        wind_mph = wind
+                
+                # Format humidity with single %
+                humidity_text = ""
+                if humidity:
+                    # Remove any existing % sign and add a single one
+                    humidity_clean = str(humidity).replace("%", "").strip()
+                    humidity_text = f"{humidity_clean}%"
+                
+                # Print match header with number
+                print(f"{'=' * 50}")
+                print(f"MATCH #{i} OF {len(match_ids)}")
+                print(f"{'=' * 50}")
+                
+                # Print match summary
+                print("\n----- MATCH SUMMARY -----")
+                print(f"Competition ID: {competition_id}")
+                print(f"Competition: {competition_name} ({competition_country})")
+                print(f"Match: {home_team_name} vs {away_team_name}")
+                print(f"Score: {match_data.get('home_score', 0)} - {match_data.get('away_score', 0)} (HT: {match_data.get('home_score_half', 0)} - {match_data.get('away_score_half', 0)})")
+                
+                # Print match status with status_id
+                status_name = get_status_description(match_data.get('status_id', 'Unknown'))
+                status_id = match_data.get('status_id', 'Unknown')
+                print(f"Status: {status_name} (Status ID: {status_id})")
+                
+                # Print odds information first
+                if formatted_odds:
+                    print("\n--- MATCH BETTING ODDS ---")
+                    print(format_odds_display(formatted_odds))
+                
+                # Print environment info after the odds
+                if weather_text or temperature_fahrenheit or wind_mph or humidity_text:
+                    print("\n--- MATCH ENVIRONMENT ---")
+                    if weather_text:
+                        print(f"Weather: {weather_text}")
+                    if temperature_fahrenheit:
+                        print(f"Temperature: {temperature_fahrenheit}")
+                    if wind_mph:
+                        print(f"Wind: {wind_mph}")
+                    if humidity_text:
+                        print(f"Humidity: {humidity_text}")
+                else:
+                    print("\n--- MATCH ENVIRONMENT ---")
+                    print("No environment data available for this match")
+                
+                print("\n")
+            except Exception as e:
+                continue
                     
-                    print("-------------------------\n")
-                except Exception as e:
-                    print(f"Error processing match {match_id}: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
+        # Print a footer
+        print(f"{'=' * 50}")
+        print(f"END OF LIVE MATCH DATA - {len(match_ids)} MATCHES DISPLAYED")
+        print(f"{'=' * 50}")
+        
     except Exception as e:
-        print(f"An error occurred in the main function: {str(e)}")
-        traceback.print_exc()
+        pass
 
 if __name__ == "__main__":
     main()
