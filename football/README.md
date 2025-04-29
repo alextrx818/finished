@@ -63,10 +63,29 @@ The script outputs a formatted summary for each match including:
 
 ## Command Line Usage
 ```bash
-python football/live.py [number_of_matches]
+# Run once (default mode)
+python football/live.py
+
+# Run in continuous mode, updating every 30 seconds
+python football/live.py --continuous
+
+# Run in continuous mode with custom interval (e.g., 45 seconds)
+python football/live.py --continuous --interval 45
+
+# Short command options are also available
+python football/live.py -c -i 30
 ```
 
-Where `[number_of_matches]` is an optional parameter to limit the number of matches processed (default: 5).
+### Continuous Monitoring Mode
+The script supports 24/7 continuous monitoring with automatic refreshing. When run with the `--continuous` flag, it will:
+
+1. Fetch and display all live matches
+2. Wait for the specified interval (default: 30 seconds)
+3. Show a timestamp for when the next update will occur
+4. Refresh the data and display updated match information
+5. Repeat until manually stopped with Ctrl+C
+
+This mode is ideal for keeping track of live matches over extended periods. The script displays timestamps with each update, making it easy to track when data was last refreshed.
 
 ## Performance Optimizations
 - Uses concurrent.futures.ThreadPoolExecutor for parallel API requests

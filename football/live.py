@@ -4,6 +4,7 @@ import time
 from functools import lru_cache
 import sys
 import traceback
+import argparse
 
 # Create a single session for all API calls
 session = requests.Session()
@@ -795,156 +796,193 @@ def main():
         country_data = fetch_country_data()
         country_map = create_country_id_to_name_map(country_data)
         
-        # Fetch live matches
-        live_matches_data = fetch_live_matches()
-        if not live_matches_data or "results" not in live_matches_data:
-            print("No live matches found.")
-            return
+        # Process matches once by default, continuously if specified
+        continuous_mode = False
+        interval = 30  # Default interval in seconds
         
-        # Extract match IDs
-        match_ids = extract_match_ids(live_matches_data)
+        # Check for command line arguments
+        parser = argparse.ArgumentParser(description='Live Football Match Monitor')
+        parser.add_argument('-c', '--continuous', action='store_true', help='Run in continuous mode')
+        parser.add_argument('-i', '--interval', type=int, help='Update interval in seconds (default: 30)')
+        args = parser.parse_args()
         
-        # Print a header with total matches found
-        print(f"\n===== FOUND {len(match_ids)} LIVE FOOTBALL MATCHES =====\n")
+        if args.continuous:
+            continuous_mode = True
+            if args.interval:
+                interval = args.interval
         
-        # Process each match ID
-        for i, match_id in enumerate(match_ids, 1):
-            try:
-                # Get match data from the live endpoint
-                live_match_data = None
-                for match in live_matches_data["results"]:
-                    if match["id"] == match_id:
-                        live_match_data = match
-                        break
+        # Run the fetch process in a loop if continuous mode is enabled
+        while True:
+            process_live_matches(country_map)
+            
+            if not continuous_mode:
+                break
                 
-                if not live_match_data:
-                    continue
-                
-                # Fetch additional match details from the recent/list endpoint
-                match_details_data = fetch_match_details(match_id)
-                
-                # Get match details from the response
-                match_details = None
-                if match_details_data and "results" in match_details_data and match_details_data["results"]:
-                    # Match details from recent/list endpoint may be in various formats
-                    if isinstance(match_details_data["results"], list):
-                        match_details = match_details_data["results"][0]
-                    else:
-                        match_details = match_details_data["results"]
-                
-                # Combine data from both endpoints
-                match_data = live_match_data.copy()  # Start with live data
-                
-                # Add or override with details data if available
-                if match_details:
-                    match_data.update({k: v for k, v in match_details.items() if k not in match_data or not match_data[k]})
-                
-                # Fetch team and competition info
-                home_team_id = match_data.get("home_team_id", "")
-                away_team_id = match_data.get("away_team_id", "")
-                competition_id = match_data.get("competition_id", "")
-                
-                home_team_info = fetch_team_info(home_team_id) if home_team_id else None
-                away_team_info = fetch_team_info(away_team_id) if away_team_id else None
-                competition_info = fetch_competition_info(competition_id) if competition_id else None
-                
-                home_team_name = extract_team_name(home_team_info) if home_team_info else "Unknown Home Team"
-                away_team_name = extract_team_name(away_team_info) if away_team_info else "Unknown Away Team"
-                
-                competition_name = extract_competition_info(competition_info)[0] if competition_info else "Unknown Competition"
-                competition_country_id = extract_competition_info(competition_info)[1] if competition_info else None
-                competition_country = country_map.get(competition_country_id, "Unknown Country")
-                
-                # Fetch odds data
-                odds_data = fetch_match_odds(match_id)
-                
-                # Format the match odds
-                formatted_odds = format_match_odds(odds_data)
-                
-                # Get environment data
-                environment = match_data.get("environment", {})
-                weather = environment.get("weather", "")
-                temperature = environment.get("temperature", "")
-                wind = environment.get("wind", "")
-                humidity = environment.get("humidity", "")
-                
-                # Convert temperature from Celsius to Fahrenheit if available
-                temperature_fahrenheit = ""
-                if temperature:
-                    try:
-                        temp_c = float(temperature)
-                        temp_f = (temp_c * 9/5) + 32
-                        temperature_fahrenheit = f"{temp_f:.1f}°F"
-                    except (ValueError, TypeError):
-                        temperature_fahrenheit = ""
-                
-                # Process weather code to text description
-                weather_text = get_weather_description(weather) if weather else ""
-                
-                # Convert wind speed from m/s to mph if available
-                wind_mph = ""
-                if wind:
-                    try:
-                        wind_mps = float(wind)
-                        wind_mph = f"{wind_mps * 2.237:.1f} mph"
-                    except (ValueError, TypeError):
-                        wind_mph = wind
-                
-                # Format humidity with single %
-                humidity_text = ""
-                if humidity:
-                    # Remove any existing % sign and add a single one
-                    humidity_clean = str(humidity).replace("%", "").strip()
-                    humidity_text = f"{humidity_clean}%"
-                
-                # Print match header with number
-                print(f"{'=' * 50}")
-                print(f"MATCH #{i} OF {len(match_ids)}")
-                print(f"{'=' * 50}")
-                
-                # Print match summary
-                print("\n----- MATCH SUMMARY -----")
-                print(f"Competition ID: {competition_id}")
-                print(f"Competition: {competition_name} ({competition_country})")
-                print(f"Match: {home_team_name} vs {away_team_name}")
-                print(f"Score: {match_data.get('home_score', 0)} - {match_data.get('away_score', 0)} (HT: {match_data.get('home_score_half', 0)} - {match_data.get('away_score_half', 0)})")
-                
-                # Print match status with status_id
-                status_name = get_status_description(match_data.get('status_id', 'Unknown'))
-                status_id = match_data.get('status_id', 'Unknown')
-                print(f"Status: {status_name} (Status ID: {status_id})")
-                
-                # Print odds information first
-                if formatted_odds:
-                    print("\n--- MATCH BETTING ODDS ---")
-                    print(format_odds_display(formatted_odds))
-                
-                # Print environment info after the odds
-                if weather_text or temperature_fahrenheit or wind_mph or humidity_text:
-                    print("\n--- MATCH ENVIRONMENT ---")
-                    if weather_text:
-                        print(f"Weather: {weather_text}")
-                    if temperature_fahrenheit:
-                        print(f"Temperature: {temperature_fahrenheit}")
-                    if wind_mph:
-                        print(f"Wind: {wind_mph}")
-                    if humidity_text:
-                        print(f"Humidity: {humidity_text}")
-                else:
-                    print("\n--- MATCH ENVIRONMENT ---")
-                    print("No environment data available for this match")
-                
-                print("\n")
-            except Exception as e:
-                continue
-                    
-        # Print a footer
-        print(f"{'=' * 50}")
-        print(f"END OF LIVE MATCH DATA - {len(match_ids)} MATCHES DISPLAYED")
-        print(f"{'=' * 50}")
-        
+            print(f"\nWaiting {interval} seconds before next update at {time.strftime('%Y-%m-%d %H:%M:%S')}...")
+            print(f"{'=' * 50}")
+            time.sleep(interval)
+            print(f"\n{'=' * 50}")
+            print(f"REFRESHING DATA AT: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"{'=' * 50}\n")
+    
+    except KeyboardInterrupt:
+        print("\nLive match monitoring stopped by user.")
     except Exception as e:
-        pass
+        print(f"Error in main function: {e}")
+        traceback.print_exc()
+
+def process_live_matches(country_map):
+    """
+    Process live matches and display their details
+    """
+    # Fetch live matches
+    live_matches_data = fetch_live_matches()
+    if not live_matches_data or "results" not in live_matches_data:
+        print("No live matches found.")
+        return
+    
+    # Extract match IDs
+    match_ids = extract_match_ids(live_matches_data)
+    
+    # Print a header with total matches found
+    print(f"\n===== FOUND {len(match_ids)} LIVE FOOTBALL MATCHES =====\n")
+    
+    # Process each match ID
+    for i, match_id in enumerate(match_ids, 1):
+        try:
+            # Get match data from the live endpoint
+            live_match_data = None
+            for match in live_matches_data["results"]:
+                if match["id"] == match_id:
+                    live_match_data = match
+                    break
+            
+            if not live_match_data:
+                continue
+            
+            # Fetch additional match details from the recent/list endpoint
+            match_details_data = fetch_match_details(match_id)
+            
+            # Get match details from the response
+            match_details = None
+            if match_details_data and "results" in match_details_data and match_details_data["results"]:
+                # Match details from recent/list endpoint may be in various formats
+                if isinstance(match_details_data["results"], list):
+                    match_details = match_details_data["results"][0]
+                else:
+                    match_details = match_details_data["results"]
+            
+            # Combine data from both endpoints
+            match_data = live_match_data.copy()  # Start with live data
+            
+            # Add or override with details data if available
+            if match_details:
+                match_data.update({k: v for k, v in match_details.items() if k not in match_data or not match_data[k]})
+            
+            # Fetch team and competition info
+            home_team_id = match_data.get("home_team_id", "")
+            away_team_id = match_data.get("away_team_id", "")
+            competition_id = match_data.get("competition_id", "")
+            
+            home_team_info = fetch_team_info(home_team_id) if home_team_id else None
+            away_team_info = fetch_team_info(away_team_id) if away_team_id else None
+            competition_info = fetch_competition_info(competition_id) if competition_id else None
+            
+            home_team_name = extract_team_name(home_team_info) if home_team_info else "Unknown Home Team"
+            away_team_name = extract_team_name(away_team_info) if away_team_info else "Unknown Away Team"
+            
+            competition_name = extract_competition_info(competition_info)[0] if competition_info else "Unknown Competition"
+            competition_country_id = extract_competition_info(competition_info)[1] if competition_info else None
+            competition_country = country_map.get(competition_country_id, "Unknown Country")
+            
+            # Fetch odds data
+            odds_data = fetch_match_odds(match_id)
+            
+            # Format the match odds
+            formatted_odds = format_match_odds(odds_data)
+            
+            # Get environment data
+            environment = match_data.get("environment", {})
+            weather = environment.get("weather", "")
+            temperature = environment.get("temperature", "")
+            wind = environment.get("wind", "")
+            humidity = environment.get("humidity", "")
+            
+            # Convert temperature from Celsius to Fahrenheit if available
+            temperature_fahrenheit = ""
+            if temperature:
+                try:
+                    temp_c = float(temperature)
+                    temp_f = (temp_c * 9/5) + 32
+                    temperature_fahrenheit = f"{temp_f:.1f}°F"
+                except (ValueError, TypeError):
+                    temperature_fahrenheit = ""
+            
+            # Process weather code to text description
+            weather_text = get_weather_description(weather) if weather else ""
+            
+            # Convert wind speed from m/s to mph if available
+            wind_mph = ""
+            if wind:
+                try:
+                    wind_mps = float(wind)
+                    wind_mph = f"{wind_mps * 2.237:.1f} mph"
+                except (ValueError, TypeError):
+                    wind_mph = wind
+            
+            # Format humidity with single %
+            humidity_text = ""
+            if humidity:
+                # Remove any existing % sign and add a single one
+                humidity_clean = str(humidity).replace("%", "").strip()
+                humidity_text = f"{humidity_clean}%"
+            
+            # Print match header with number
+            print(f"{'=' * 50}")
+            print(f"MATCH #{i} OF {len(match_ids)}")
+            print(f"{'=' * 50}")
+            
+            # Print match summary
+            print("\n----- MATCH SUMMARY -----")
+            print(f"Competition ID: {competition_id}")
+            print(f"Competition: {competition_name} ({competition_country})")
+            print(f"Match: {home_team_name} vs {away_team_name}")
+            print(f"Score: {match_data.get('home_score', 0)} - {match_data.get('away_score', 0)} (HT: {match_data.get('home_score_half', 0)} - {match_data.get('away_score_half', 0)})")
+            
+            # Print match status with status_id
+            status_name = get_status_description(match_data.get('status_id', 'Unknown'))
+            status_id = match_data.get('status_id', 'Unknown')
+            print(f"Status: {status_name} (Status ID: {status_id})")
+            
+            # Print odds information first
+            if formatted_odds:
+                print("\n--- MATCH BETTING ODDS ---")
+                print(format_odds_display(formatted_odds))
+            
+            # Print environment info after the odds
+            if weather_text or temperature_fahrenheit or wind_mph or humidity_text:
+                print("\n--- MATCH ENVIRONMENT ---")
+                if weather_text:
+                    print(f"Weather: {weather_text}")
+                if temperature_fahrenheit:
+                    print(f"Temperature: {temperature_fahrenheit}")
+                if wind_mph:
+                    print(f"Wind: {wind_mph}")
+                if humidity_text:
+                    print(f"Humidity: {humidity_text}")
+            else:
+                print("\n--- MATCH ENVIRONMENT ---")
+                print("No environment data available for this match")
+            
+            print("\n")
+        except Exception as e:
+            continue
+    
+    # Print a footer
+    print(f"{'=' * 50}")
+    print(f"END OF LIVE MATCH DATA - {len(match_ids)} MATCHES DISPLAYED")
+    print(f"{'=' * 50}")
+    print(f"Last updated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
 if __name__ == "__main__":
     main()

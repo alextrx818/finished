@@ -336,8 +336,14 @@ def main():
     manager.add_criteria(MatchEndAlert())
     manager.add_criteria(HighOddsAlert(threshold=400))
     
-    print(f"Starting Football Alerts System at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    bot.send_message(f"🚀 <b>Football Alerts System Started</b>\nMonitoring live matches for alerts.")
+    start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"Starting Football Alerts System at {start_time}")
+    
+    # Send startup notification
+    start_message = f"🚀 <b>Football Alerts System Started</b>\n" \
+                    f"Time: {start_time}\n" \
+                    f"Monitoring live matches for alerts."
+    bot.send_message(start_message)
     
     try:
         # Check matches in a loop
@@ -346,12 +352,24 @@ def main():
             print(f"Completed check at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. Waiting 60 seconds...")
             time.sleep(60)  # Check every minute
     except KeyboardInterrupt:
-        print("\nAlert system stopped by user.")
-        bot.send_message("⚠️ Football Alerts System stopped.")
+        stop_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        print(f"\nAlert system stopped by user at {stop_time}.")
+        
+        # Send shutdown notification
+        stop_message = f"⚠️ <b>Football Alerts System Stopped</b>\n" \
+                      f"Time: {stop_time}\n" \
+                      f"System was manually stopped."
+        bot.send_message(stop_message)
     except Exception as e:
+        stop_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         error_msg = f"Error in alert system: {e}"
         print(error_msg)
-        bot.send_message(f"❌ <b>ERROR</b>: {error_msg}")
+        
+        # Send error notification
+        error_message = f"❌ <b>Football Alerts System Error</b>\n" \
+                       f"Time: {stop_time}\n" \
+                       f"Error: {error_msg}"
+        bot.send_message(error_message)
 
 if __name__ == "__main__":
     main()
