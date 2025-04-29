@@ -330,7 +330,22 @@ def main():
     # Create alert manager and add criteria
     manager = AlertManager(bot)
     
-    # Add alert criteria
+    # Import our custom alerts
+    try:
+        sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "alerts"))
+        from alerts.HighLineHalftimeZero import HighLineHalftimeZeroAlert
+        from alerts.ThreeHtZero import ThreeHtZeroAlert
+        from alerts.match_start.three_ou import ThreeOUStartAlert
+        
+        # Add the custom alerts
+        manager.add_criteria(HighLineHalftimeZeroAlert())
+        manager.add_criteria(ThreeHtZeroAlert())
+        manager.add_criteria(ThreeOUStartAlert())
+        print("Custom alerts loaded successfully.")
+    except Exception as e:
+        print(f"Error loading custom alerts: {e}")
+    
+    # Add our standard alert criteria
     manager.add_criteria(GoalScoredAlert())
     manager.add_criteria(HalfTimeAlert())
     manager.add_criteria(MatchEndAlert())
@@ -349,8 +364,8 @@ def main():
         # Check matches in a loop
         while True:
             manager.check_all_matches()
-            print(f"Completed check at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. Waiting 60 seconds...")
-            time.sleep(60)  # Check every minute
+            print(f"Completed check at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. Waiting 30 seconds...")
+            time.sleep(30)  # Check every 30 seconds
     except KeyboardInterrupt:
         stop_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"\nAlert system stopped by user at {stop_time}.")
