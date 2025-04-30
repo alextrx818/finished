@@ -51,6 +51,32 @@ All odds types (European, Asia Handicap, and Over/Under) are filtered to only in
 - For Hong Kong odds ≥ 1.0: `odds * 100` (with + sign)
 - For Hong Kong odds < 1.0: `-100 / odds` (with - sign)
 
+## Score Data Extraction
+Updated: 2025-04-30
+
+The script now extracts score data directly from the detailed structure in the `detail_live` API response. The score data is provided in a nested array structure:
+
+```
+score:[
+  0:"dn1m1ghlv62vmoe"  // Match ID
+  1:2                  // Unknown field
+  2:[                  // Home team scores array
+    0:1                // Current home score (may include text like "(Home Live)")
+    1:1                // Half-time home score (may include text)
+    2:0                // Other score fields
+    ...
+  ]
+  3:[                  // Away team scores array
+    0:0                // Current away score (may include text like "(Away Live Score)")
+    1:0                // Half-time away score (may include text)
+    2:0                // Other score fields
+    ...
+  ]
+]
+```
+
+The script parses this structure to extract both current and half-time scores, handling cases where the API might include descriptive text along with numeric scores.
+
 ## Output Display
 The script outputs a formatted summary for each match including:
 - Match teams and score
@@ -92,7 +118,7 @@ This mode is ideal for keeping track of live matches over extended periods. The 
 The project includes a comprehensive alerts system that monitors live matches and sends notifications via Telegram when specific criteria are met. Full documentation is available in:
 
 - [ALERTS_README.md](./ALERTS_README.md) - General alerts documentation
-- [MATCH_START_ALERTS_README.md](./MATCH_START_ALERTS_README.md) - Match start alerts documentation
+- [MATCH_START_ALERTS_README.md](./MATCH_START_ALERTS_README.md) - Match start alert documentation
 - [STARTUP_README.md](./STARTUP_README.md) - How to run the system 24/7
 
 ### Available Alert Types
@@ -105,38 +131,31 @@ The project includes a comprehensive alerts system that monitors live matches an
 ### Running the Alerts System
 
 ```bash
-# Start both live monitoring and alerts system
-bash football/restart_all.sh
-
-# View live match output in terminal
-bash football/show_matches.sh
-
-# View alerts logs
-tail -f football/alerts.log
+# Run as a daemon process (background)
+bash football/start_24_7_monitoring.sh
 ```
 
-### Adding Custom Alerts
+## Daily Log Fetcher
 
-The alerts system is modular and extensible. Create new alert types by adding Python files to the appropriate directory in the `alerts/` folder and extend the `AlertCriteria` class. See the MATCH_START_ALERTS_README.md for detailed instructions.
-
-## Daily Match Logging System
-
-The project includes a daily logging system that records every fetch made by live.py throughout the day, allowing for end-of-day review and analysis.
+A companion script (`daily_log_fetcher.py`) is included to create a continuous log of all live match data for analysis purposes. This tool runs `live.py` at regular intervals (default: 30 seconds) and logs the complete output to daily log files.
 
 ### Starting the Daily Logger
 
 ```bash
-# Start the daily logger in the background (logs every 30 seconds)
+# Start the daily logger in the background
 bash football/start_daily_logging.sh
 ```
 
 ### Viewing Daily Logs
 
 ```bash
-# View today's log summary
+# View today's logs
+cat football/logs/football_fetches_$(date +%Y-%m-%d).log
+
+# Use the log viewer tool
 python3 football/view_daily_logs.py
 
-# View a specific date's logs
+# View logs for a specific date
 python3 football/view_daily_logs.py --date 2025-04-28
 
 # View detailed fetch information
@@ -195,8 +214,23 @@ The script maps numeric status IDs from the API to human-readable descriptions:
 
 These status codes are fetched from the `https://api.thesports.com/v1/football/match/recent/list` endpoint and displayed in the match summary section of each match.
 
+## Recent Changes
+Last updated: 2025-04-30
+
+### Score Data Improvements
+The system was enhanced to extract more accurate score data from the nested array structure in the `detail_live` API response. Previously, the system was using the simpler `home_score`, `away_score`, `home_score_half`, and `away_score_half` fields, which occasionally had issues with accuracy.
+
+Now, the system directly parses the more detailed `score` array structure, which contains both current and half-time scores for home and away teams. This approach:
+
+1. Ensures more accurate score reporting
+2. Handles special cases where scores may include descriptive text
+3. Properly extracts half-time scores even when they're not available in the simpler fields
+4. Updates every 30 seconds to keep score data current
+
+This change improved the system's reliability for score reporting, especially for in-progress matches.
+
 ## Field Mapping Reference
-Last updated: 2025-04-29
+Last updated: 2025-04-30
 
 ## ⚠️ IMPORTANT NOTE ⚠️
 **live.py is the foundation of this project and must NOT be modified without explicit permission from the project owner. This file serves as the core data processing engine and any unauthorized changes could disrupt the entire system.**
@@ -209,8 +243,8 @@ Last updated: 2025-04-29
 | Competition Name | competition/additional/list | `results[0].name` | Fetched using competition ID |
 | Competition Country | country/list | `results[X].name` | X is the country ID from competition info |
 | Match Teams | team/additional/list | `results[0].name` | Fetched for both home and away team IDs |
-| Score | match/detail_live | `home_score`, `away_score` | Current score |
-| HT Score | match/detail_live | `home_score_half`, `away_score_half` | Half-time score |
+| Score (Current) | match/detail_live | `score[2][0]`, `score[3][0]` | Home & away current scores |
+| Score (Half-time) | match/detail_live | `score[2][1]`, `score[3][1]` | Home & away half-time scores |
 | Status | match/recent/list | `status_id` | Mapped to readable description (see status codes) |
 | Match Time | match/recent/list | `match_time` | Unix timestamp of match start |
 | Environment Data | match/recent/list | `environment` | Contains weather, temperature, wind, humidity |

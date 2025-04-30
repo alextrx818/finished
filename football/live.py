@@ -846,6 +846,7 @@ def process_live_matches(country_map):
     
     # Print a header with total matches found
     print(f"\n===== FOUND {len(match_ids)} LIVE FOOTBALL MATCHES =====\n")
+    print(f"Last updated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     
     # Process each match ID
     for i, match_id in enumerate(match_ids, 1):
@@ -947,7 +948,46 @@ def process_live_matches(country_map):
             print(f"Competition ID: {competition_id}")
             print(f"Competition: {competition_name} ({competition_country})")
             print(f"Match: {home_team_name} vs {away_team_name}")
-            print(f"Score: {match_data.get('home_score', 0)} - {match_data.get('away_score', 0)} (HT: {match_data.get('home_score_half', 0)} - {match_data.get('away_score_half', 0)})")
+            
+            # Extract scores from detail_live API format
+            home_live_score = 0
+            home_ht_score = 0
+            away_live_score = 0
+            away_ht_score = 0
+            
+            if "score" in match_data:
+                score_data = match_data.get("score", [])
+                if isinstance(score_data, list) and len(score_data) > 3:
+                    # Home scores (index 2)
+                    home_scores = score_data[2]
+                    if isinstance(home_scores, list) and len(home_scores) > 1:
+                        # Home live score (index 0)
+                        if isinstance(home_scores[0], str) and " " in home_scores[0]:
+                            home_live_score = home_scores[0].split(" ")[0]
+                        else:
+                            home_live_score = home_scores[0]
+                        # Home half-time score (index 1)
+                        if isinstance(home_scores[1], str) and " " in home_scores[1]:
+                            home_ht_score = home_scores[1].split(" ")[0]
+                        else:
+                            home_ht_score = home_scores[1]
+                    
+                    # Away scores (index 3)
+                    away_scores = score_data[3]
+                    if isinstance(away_scores, list) and len(away_scores) > 1:
+                        # Away live score (index 0)
+                        if isinstance(away_scores[0], str) and " " in away_scores[0]:
+                            away_live_score = away_scores[0].split(" ")[0]
+                        else:
+                            away_live_score = away_scores[0]
+                        # Away half-time score (index 1)
+                        if isinstance(away_scores[1], str) and " " in away_scores[1]:
+                            away_ht_score = away_scores[1].split(" ")[0]
+                        else:
+                            away_ht_score = away_scores[1]
+            
+            # Print the updated score format
+            print(f"Score: {home_live_score} - {away_live_score} (HT: {home_ht_score} - {away_ht_score})")
             
             # Print match status with status_id
             status_name = get_status_description(match_data.get('status_id', 'Unknown'))
@@ -976,13 +1016,15 @@ def process_live_matches(country_map):
             
             print("\n")
         except Exception as e:
+            print(f"Error processing match {match_id}: {str(e)}")
+            traceback.print_exc()
             continue
     
     # Print a footer
     print(f"{'=' * 50}")
     print(f"END OF LIVE MATCH DATA - {len(match_ids)} MATCHES DISPLAYED")
     print(f"{'=' * 50}")
-    print(f"Last updated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Refreshing in 30 seconds... (Press Ctrl+C to exit)")
 
 if __name__ == "__main__":
     main()
