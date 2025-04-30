@@ -8,4 +8,4 @@ echo "========================================"
 
 # Run the wrapper script which will send Telegram notifications and then run live.py
 cd "/root/CascadeProjects/sports bot"
-python3 football/live_monitor_wrapper.py 6128359776 30
+python3 football/live_monitor_wrapper.py 6128359776 30 | tee football/live_output.log

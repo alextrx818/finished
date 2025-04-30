@@ -80,7 +80,18 @@ def main():
     
     try:
         # Run the live.py script and redirect output
-        process = subprocess.Popen(cmd)
+        process = subprocess.Popen(
+            cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
+        )
+        
+        # Print output to terminal in real-time
+        for line in process.stdout:
+            print(line, end='', flush=True)
+            
         process.wait()
     except Exception as e:
         error_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')

@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 
 # Import alert types
-from .base import LogScannerAlert
+from .base import LogScannerAlert, get_eastern_time
 from .three_ht_zero import ThreeHtZeroLoggerAlert
 
 # Configure logging
@@ -27,7 +27,7 @@ def scan_logs(alerts, specific_date=None):
     if specific_date:
         log_date = specific_date
     else:
-        log_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        log_date = get_eastern_time().strftime("%Y-%m-%d")
         
     log_file = os.path.join(LOG_DIR, f"football_fetches_{log_date}.log")
     
@@ -66,7 +66,7 @@ def main():
     parser.add_argument('-i', '--interval', type=int, default=60,
                         help='Interval between scans in seconds (default: 60)')
     parser.add_argument('-d', '--date', type=str, default=None,
-                        help='Specific date to scan logs for (YYYY-MM-DD, default: today)')
+                        help='Specific date to scan logs for (YYYY-MM-DD, default: today in Eastern Time)')
     parser.add_argument('-t', '--telegram-token', type=str, default=None,
                         help='Telegram bot token')
     parser.add_argument('-chat', '--telegram-chat-id', type=str, default=None,
@@ -80,6 +80,10 @@ def main():
     
     # Make sure logs directory exists
     os.makedirs(LOG_DIR, exist_ok=True)
+    
+    # Show current Eastern Time on startup
+    et_now = get_eastern_time().strftime("%Y-%m-%d %H:%M:%S ET")
+    logger.info(f"Log scanner starting at {et_now}")
     
     if args.continuous:
         continuous_scanning(alerts, args.interval)

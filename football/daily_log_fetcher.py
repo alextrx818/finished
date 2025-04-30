@@ -9,14 +9,43 @@ import sys
 import time
 import datetime
 import subprocess
-import json
 import signal
 import argparse
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 # Configuration
 LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 LIVE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "live.py")
+
+# Eastern Time zone offset (UTC-5 or UTC-4 during DST)
+def get_eastern_time():
+    """Get current datetime in US Eastern Time (handles DST)"""
+    # Get UTC time
+    utc_now = datetime.now(timezone.utc)
+    
+    # Eastern Standard Time is UTC-5
+    # Eastern Daylight Time is UTC-4
+    # Python can determine if DST is in effect
+    est_offset = -5
+    edt_offset = -4
+    
+    # Check if DST is in effect (approximate method)
+    # DST in US starts second Sunday in March and ends first Sunday in November
+    year = utc_now.year
+    dst_start = datetime(year, 3, 8, 2, 0, tzinfo=timezone.utc)  # 2 AM on second Sunday in March
+    dst_start += timedelta(days=(6 - dst_start.weekday()) % 7)  # Adjust to Sunday
+    
+    dst_end = datetime(year, 11, 1, 2, 0, tzinfo=timezone.utc)  # 2 AM on first Sunday in November
+    dst_end += timedelta(days=(6 - dst_end.weekday()) % 7)  # Adjust to Sunday
+    
+    # Determine if we're in DST
+    is_dst = dst_start <= utc_now < dst_end
+    offset = edt_offset if is_dst else est_offset
+    
+    # Apply offset
+    et = utc_now + timedelta(hours=offset)
+    return et
 
 def setup_logging_directory():
     """Create logs directory if it doesn't exist"""
@@ -25,112 +54,26 @@ def setup_logging_directory():
         print(f"Created logs directory at {LOG_DIR}")
 
 def get_log_filename():
-    """Get log filename based on current date"""
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    """Get log filename based on current date in Eastern Time"""
+    today = get_eastern_time().strftime("%Y-%m-%d")
     return os.path.join(LOG_DIR, f"football_fetches_{today}.log")
 
-def log_fetch_data(log_file, data):
-    """Log fetch data to the appropriate file"""
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def log_raw_output(log_file, output):
+    """Log the raw output from live.py exactly as it appears"""
+    timestamp = get_eastern_time().strftime("%Y-%m-%d %H:%M:%S ET")
     
-    # Format the log entry
-    log_entry = {
-        "timestamp": timestamp,
-        "data": data
-    }
-    
-    # Write to log file
+    # Write timestamp and separator
     with open(log_file, 'a') as f:
-        f.write(json.dumps(log_entry) + "\n")
-
-def parse_live_output(output, log_file):
-    """Parse the output from live.py and extract relevant information"""
-    # Extract match data
-    matches = []
-    current_match = {}
-    in_match = False
-    match_count = 0
-    
-    for line in output.split('\n'):
-        if "===== FOUND " in line and "LIVE FOOTBALL MATCHES =====" in line:
-            # Extract total matches count
-            try:
-                match_count = int(line.split("FOUND ")[1].split(" LIVE")[0])
-            except:
-                match_count = 0
-                
-        elif "MATCH #" in line and "OF" in line:
-            # Start of a new match
-            if current_match and in_match:
-                matches.append(current_match)
-            current_match = {"raw_header": line}
-            in_match = True
-            
-        elif "----- MATCH SUMMARY -----" in line:
-            current_match["section"] = "summary"
-            
-        elif "--- MATCH BETTING ODDS ---" in line:
-            current_match["section"] = "odds"
-            
-        elif "--- MATCH ENVIRONMENT ---" in line:
-            current_match["section"] = "environment"
-            
-        elif "Competition ID:" in line and in_match:
-            try:
-                current_match["competition_id"] = line.split("Competition ID:")[1].strip()
-            except:
-                pass
-                
-        elif "Competition:" in line and in_match:
-            try:
-                current_match["competition"] = line.split("Competition:")[1].strip()
-            except:
-                pass
-                
-        elif "Match:" in line and in_match:
-            try:
-                match_text = line.split("Match:")[1].strip()
-                current_match["match"] = match_text
-                # Try to extract teams
-                if " vs " in match_text:
-                    teams = match_text.split(" vs ")
-                    current_match["home_team"] = teams[0].strip()
-                    current_match["away_team"] = teams[1].strip()
-            except:
-                pass
-                
-        elif "Score:" in line and in_match:
-            try:
-                current_match["score"] = line.split("Score:")[1].strip()
-            except:
-                pass
-                
-        elif "Status:" in line and in_match:
-            try:
-                current_match["status"] = line.split("Status:")[1].strip()
-            except:
-                pass
-                
-        elif "Over/Under:" in line and in_match:
-            try:
-                current_match["ou_line"] = line.split("Line:")[1].split("|")[0].strip() if "Line:" in line else ""
-            except:
-                pass
-    
-    # Add the last match if there is one
-    if current_match and in_match:
-        matches.append(current_match)
-    
-    # Create the log data
-    log_data = {
-        "total_matches": match_count,
-        "matches": matches
-    }
-    
-    # Log the data
-    log_fetch_data(log_file, log_data)
-    
-    return log_data
+        f.write("\n\n")
+        f.write("=" * 80 + "\n")
+        f.write(f"FETCH TIMESTAMP: {timestamp}\n")
+        f.write("=" * 80 + "\n\n")
+        
+        # Write the raw output exactly as it appears
+        f.write(output)
+        
+        # Add trailing separator
+        f.write("\n" + "=" * 80 + "\n")
 
 def run_live_and_log(interval=30, max_runs=None):
     """Run live.py and log its output periodically"""
@@ -149,7 +92,7 @@ def run_live_and_log(interval=30, max_runs=None):
     try:
         while True:
             # Get the current time for this run
-            run_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            run_time = get_eastern_time().strftime("%Y-%m-%d %H:%M:%S ET")
             print(f"\nFetch #{run_count+1} at {run_time}")
             
             # Run live.py in non-continuous mode to get a single fetch
@@ -158,10 +101,19 @@ def run_live_and_log(interval=30, max_runs=None):
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 output = result.stdout
                 
-                # Parse and log the output
-                log_data = parse_live_output(output, log_file)
+                # Log the raw output
+                log_raw_output(log_file, output)
                 
-                print(f"Logged {log_data['total_matches']} matches to {log_file}")
+                # Extract match count for feedback
+                match_count = 0
+                for line in output.split('\n'):
+                    if "===== FOUND " in line and "LIVE FOOTBALL MATCHES =====" in line:
+                        try:
+                            match_count = int(line.split("FOUND ")[1].split(" LIVE")[0])
+                        except:
+                            match_count = 0
+                            
+                print(f"Logged {match_count} matches to {log_file}")
                 
             except Exception as e:
                 print(f"Error running live.py: {e}")
@@ -175,7 +127,7 @@ def run_live_and_log(interval=30, max_runs=None):
                 break
                 
             # Wait for the next interval
-            next_time = (datetime.datetime.now() + datetime.timedelta(seconds=interval)).strftime("%Y-%m-%d %H:%M:%S")
+            next_time = (get_eastern_time() + timedelta(seconds=interval)).strftime("%Y-%m-%d %H:%M:%S ET")
             print(f"Next fetch at {next_time}")
             print("-" * 50)
             time.sleep(interval)

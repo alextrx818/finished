@@ -7,11 +7,13 @@ Provides common functionality for all log-based alerts
 import os
 import logging
 import requests
+from datetime import datetime, timedelta, timezone
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S ET',
     handlers=[
         logging.FileHandler(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
@@ -22,8 +24,37 @@ logging.basicConfig(
 logger = logging.getLogger("log_alerts")
 
 # Default Telegram settings
-DEFAULT_TELEGRAM_TOKEN = "5985601372:AAHDVArcK2W54K7r_YIq9GRQHVHVkXfh5Lw"
-DEFAULT_TELEGRAM_CHAT_ID = "-1001982042886"
+DEFAULT_TELEGRAM_TOKEN = "7764953908:AAHMpJsw5vKQYPiJGWrj0PgDkztiIgY_dko"
+DEFAULT_TELEGRAM_CHAT_ID = "6128359776"
+
+# Eastern Time zone utility
+def get_eastern_time():
+    """Get current datetime in US Eastern Time (handles DST)"""
+    # Get UTC time
+    utc_now = datetime.now(timezone.utc)
+    
+    # Eastern Standard Time is UTC-5
+    # Eastern Daylight Time is UTC-4
+    # Python can determine if DST is in effect
+    est_offset = -5
+    edt_offset = -4
+    
+    # Check if DST is in effect (approximate method)
+    # DST in US starts second Sunday in March and ends first Sunday in November
+    year = utc_now.year
+    dst_start = datetime(year, 3, 8, 2, 0, tzinfo=timezone.utc)  # 2 AM on second Sunday in March
+    dst_start += timedelta(days=(6 - dst_start.weekday()) % 7)  # Adjust to Sunday
+    
+    dst_end = datetime(year, 11, 1, 2, 0, tzinfo=timezone.utc)  # 2 AM on first Sunday in November
+    dst_end += timedelta(days=(6 - dst_end.weekday()) % 7)  # Adjust to Sunday
+    
+    # Determine if we're in DST
+    is_dst = dst_start <= utc_now < dst_end
+    offset = edt_offset if is_dst else est_offset
+    
+    # Apply offset
+    et = utc_now + timedelta(hours=offset)
+    return et
 
 class LogScannerAlert:
     """Base class for log scanner alerts"""
@@ -40,6 +71,11 @@ class LogScannerAlert:
     def send_telegram_alert(self, message):
         """Send an alert message via Telegram"""
         telegram_url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+        
+        # Add timestamp to message with Eastern Time
+        timestamp = get_eastern_time().strftime("%Y-%m-%d %H:%M:%S ET")
+        message = f"{message}\n\nTimestamp: {timestamp}"
+        
         try:
             response = requests.post(
                 telegram_url,
